@@ -44,9 +44,7 @@ float Get_Equip_Mass()
   float mass = 0;
   while ((equip = em->Traverse( et )) != 0)
   {
-    if (equip->type == 0x10000) 	// Cargo
-      mass += equip->archetype->mass * equip->count;
-    else
+    if (equip->type != 0x10000)
       mass += equip->archetype->mass;
   }
   return mass;
