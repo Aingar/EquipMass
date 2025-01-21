@@ -17,6 +17,8 @@
 
 #include "common.h"
 #include <map>
+#include <vector>
+#include <string>
 
 #define NAKED	__declspec( naked )
 #define STDCALL __stdcall
@@ -33,21 +35,30 @@ DWORD dummy;
   prev = *(PDWORD)(from); \
   *(PDWORD)(from) = (DWORD)to
 
-
+map<UINT, float> equipMap;
 char* cobject;
 
 float Get_Equip_Mass()
 {
-  CEquipManager* em = (CEquipManager*)(cobject+0xE4);
-  CEquipTraverser et;
-  CEquip* equip;
-  float mass = 0;
-  while ((equip = em->Traverse( et )) != 0)
-  {
-    if (equip->type != 0x10000)
-      mass += equip->archetype->mass;
-  }
-  return mass;
+    CEquipManager* em = (CEquipManager*)(cobject + 0xE4);
+    CEquipTraverser et;
+    CEquip* equip;
+    float mass = 0;
+    float mod = 1.0f;
+    while ((equip = em->Traverse(et)) != 0)
+    {
+        if (equip->type == 0x10000)
+        {
+            continue;
+        }
+        mass += equip->archetype->mass;
+        map<UINT, float>::iterator iter = equipMap.find(equip->archetype->archId);
+        if (iter != equipMap.end())
+        {
+            mod *= iter->second;
+        }
+    }
+    return mass * mod;
 }
 
 
@@ -79,8 +90,69 @@ void Mass_Hook()
 
 void Patch()
 {
-  ProtectX( ADDR_MASS, 4 );
-  NEWABS( ADDR_MASS, Mass_Hook, Mass_Org );
+    ProtectX(ADDR_MASS, 4);
+    NEWABS(ADDR_MASS, Mass_Hook, Mass_Org);
+
+    INI_Reader ini;
+
+    char szCurDir[MAX_PATH];
+    GetCurrentDirectory(sizeof(szCurDir), szCurDir);
+    std::string currDir = string(szCurDir);
+    std::string scFreelancerIniFile = currDir + R"(\freelancer.ini)";
+
+    std::string gameDir = currDir.substr(0, currDir.length() - 4);
+    gameDir += string(R"(\DATA\)");
+
+    if (!ini.open(scFreelancerIniFile.c_str(), false))
+    {
+        return;
+    }
+
+    vector<std::string> equipFiles;
+
+    while (ini.read_header())
+    {
+        if (!ini.is_header("Data"))
+        {
+            continue;
+        }
+        while (ini.read_value())
+        {
+            if (ini.is_value("equipment"))
+            {
+                equipFiles.emplace_back(ini.get_value_string());
+            }
+        }
+    }
+
+    ini.close();
+
+    for (std::string& equipFile : equipFiles)
+    {
+        equipFile = gameDir + equipFile;
+        if (!ini.open(equipFile.c_str(), false))
+        {
+            continue;
+        }
+
+        uint currNickname;
+        while (ini.read_header())
+        {
+            while (ini.read_value())
+            {
+                if (ini.is_value("nickname"))
+                {
+                    currNickname = CreateID(ini.get_value_string(0));
+                }
+                else if (ini.is_value("mass_mult"))
+                {
+                    equipMap[currNickname] = ini.get_value_float(0);
+                }
+            }
+        }
+
+        ini.close();
+    }
 }
 
 
